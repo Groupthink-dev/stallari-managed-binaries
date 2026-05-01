@@ -23,9 +23,8 @@ build:
   cgo_enabled: false                     # true only if upstream needs CGO (e.g. SQLite-with-libsqlite)
   flags: "-trimpath -buildvcs=false"     # Standard reproducibility flags; do not change without justification
 
-architectures:                           # macOS-only for now; add linux/windows when daemon ports require
-  - darwin-arm64
-  - darwin-amd64
+architectures:                           # Stallari runs on Apple Silicon only — do not add darwin-amd64.
+  - darwin-arm64                         # Add linux-arm64 / linux-amd64 when a daemon port requires them.
 
 # Optional: subdirectory inside the upstream module containing the main package.
 # Default is the module root (`go install module@version`).

@@ -10,7 +10,7 @@ This repo runs reproducible Go builds on hosted GitHub Actions runners and publi
 
 | Binary | Upstream | Purpose | Architectures |
 |---|---|---|---|
-| [`gatus`](manifests/gatus.yaml) | [TwiN/gatus](https://github.com/TwiN/gatus) | Uptime monitoring + dashboard (DD-191) | `darwin-arm64`, `darwin-amd64` |
+| [`gatus`](manifests/gatus.yaml) | [TwiN/gatus](https://github.com/TwiN/gatus) | Uptime monitoring + dashboard (DD-191) | `darwin-arm64` |
 | `cloudflared` | [cloudflare/cloudflared](https://github.com/cloudflare/cloudflared) | Cloudflare Tunnel client (DD-204 Phase 1) | _planned_ |
 | `lego` | [go-acme/lego](https://github.com/go-acme/lego) | ACME client for `LocalAcmeHTTPPresenter` (DD-204 Phase 8) | _planned_ |
 
@@ -39,7 +39,9 @@ Codesigning would add nothing the SHA pin does not already provide for *daemon-s
 
 | Tag | Release | Assets |
 |---|---|---|
-| `gatus-v5.13.0` | `gatus-v5.13.0` | `gatus-5.13.0-darwin-arm64`, `gatus-5.13.0-darwin-arm64.sha256`, `gatus-5.13.0-darwin-amd64`, `gatus-5.13.0-darwin-amd64.sha256` |
+| `gatus-v5.13.0` | `gatus-v5.13.0` | `gatus-5.13.0-darwin-arm64`, `gatus-5.13.0-darwin-arm64.sha256` |
+
+**Apple Silicon only.** Stallari does not run on Intel Macs; managed-binary manifests do not declare `darwin-amd64`. Add `linux-arm64` / `linux-amd64` only when a daemon port to those platforms requires them.
 
 ### Verifying an asset locally
 

@@ -20,4 +20,4 @@ build:
 
 architectures:
   - darwin-arm64
-  - darwin-amd64
+# darwin-amd64 deliberately omitted — Stallari is Apple Silicon only.
