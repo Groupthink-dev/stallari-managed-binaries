@@ -1,6 +1,6 @@
 <p align="center">
   <a href="https://stallari.ai">
-    <img src="https://stallari.ai/assets/stallari-icon.png" width="96" alt="Stallari">
+    <img src="assets/stallari-icon.png" width="96" alt="Stallari">
   </a>
 </p>
 
