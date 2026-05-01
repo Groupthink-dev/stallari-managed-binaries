@@ -15,6 +15,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install PyYAML
+        shell: bash
+        run: python3 -m pip install --break-system-packages --quiet pyyaml
+
       - name: Parse tag and manifest
         id: meta
         shell: bash
