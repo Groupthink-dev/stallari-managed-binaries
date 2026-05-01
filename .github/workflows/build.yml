@@ -103,20 +103,22 @@ jobs:
             export GOOS="${ARCH%-*}"
             export GOARCH="${ARCH#*-}"
             STAGE=$(mktemp -d)
-            export GOBIN="$STAGE"
+            # GOBIN cannot be set for cross-compiled `go install` (Go refuses).
+            # GOPATH works for both: native lands at $GOPATH/bin/<name>,
+            # cross at $GOPATH/bin/$GOOS_$GOARCH/<name>.
+            unset GOBIN
+            export GOPATH="$STAGE"
 
             echo "==> $ARCH (GOOS=$GOOS GOARCH=$GOARCH CGO_ENABLED=$CGO_ENABLED)"
             go install "$INSTALL_TARGET"
 
-            # Cross-compiled binaries land in $GOBIN/$GOOS_$GOARCH/<name>;
-            # native builds land in $GOBIN/<name>.
-            if [ -f "$STAGE/${GOOS}_${GOARCH}/${BINARY}" ]; then
-              SRC="$STAGE/${GOOS}_${GOARCH}/${BINARY}"
-            elif [ -f "$STAGE/${BINARY}" ]; then
-              SRC="$STAGE/${BINARY}"
+            if [ -f "$STAGE/bin/${GOOS}_${GOARCH}/${BINARY}" ]; then
+              SRC="$STAGE/bin/${GOOS}_${GOARCH}/${BINARY}"
+            elif [ -f "$STAGE/bin/${BINARY}" ]; then
+              SRC="$STAGE/bin/${BINARY}"
             else
-              echo "::error::Binary not found in $STAGE after build"
-              find "$STAGE"
+              echo "::error::Binary not found in $STAGE/bin after build"
+              find "$STAGE" -type f
               exit 1
             fi
 
