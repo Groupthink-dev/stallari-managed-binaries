@@ -1,0 +1,178 @@
+name: build
+
+on:
+  push:
+    tags:
+      - '*-v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-14
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Parse tag and manifest
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          if [[ ! "$TAG" =~ ^([a-z0-9-]+)-v(.+)$ ]]; then
+            echo "::error::Tag '$TAG' does not match '<binary>-v<version>'"
+            exit 1
+          fi
+          BINARY="${BASH_REMATCH[1]}"
+          VERSION="${BASH_REMATCH[2]}"
+          MANIFEST="manifests/${BINARY}.yaml"
+          if [ ! -f "$MANIFEST" ]; then
+            echo "::error::No manifest at $MANIFEST"
+            exit 1
+          fi
+
+          # Extract values via python yaml (always present on macos runners)
+          eval "$(python3 - "$MANIFEST" <<'PY'
+          import sys, yaml
+          m = yaml.safe_load(open(sys.argv[1]))
+          b = m.get('build', {})
+          print(f"MANIFEST_VERSION='{m['version']}'")
+          print(f"GO_VERSION='{b.get('go_version', '1.26')}'")
+          print(f"MODULE='{m['upstream']['module']}'")
+          print(f"REPO='{m['upstream']['repository']}'")
+          print(f"LICENSE_URL='{m['upstream']['license']}'")
+          print(f"CGO_ENABLED='{1 if b.get('cgo_enabled', False) else 0}'")
+          print(f"BUILD_FLAGS='{b.get('flags', '-trimpath -buildvcs=false')}'")
+          print(f"ARCHS='{' '.join(m['architectures'])}'")
+          print(f"PACKAGE_SUBDIR='{b.get('package_subdir', '')}'")
+          PY
+          )"
+
+          if [ "$VERSION" != "$MANIFEST_VERSION" ]; then
+            echo "::error::Tag version '$VERSION' does not match manifest version '$MANIFEST_VERSION'"
+            exit 1
+          fi
+
+          {
+            echo "binary=$BINARY"
+            echo "version=$VERSION"
+            echo "go_version=$GO_VERSION"
+            echo "module=$MODULE"
+            echo "repo=$REPO"
+            echo "license_url=$LICENSE_URL"
+            echo "cgo_enabled=$CGO_ENABLED"
+            echo "build_flags=$BUILD_FLAGS"
+            echo "archs=$ARCHS"
+            echo "package_subdir=$PACKAGE_SUBDIR"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "==> Building $BINARY v$VERSION for archs: $ARCHS"
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ steps.meta.outputs.go_version }}
+          cache: false
+
+      - name: Build all architectures
+        shell: bash
+        env:
+          BINARY: ${{ steps.meta.outputs.binary }}
+          VERSION: ${{ steps.meta.outputs.version }}
+          MODULE: ${{ steps.meta.outputs.module }}
+          CGO_ENABLED: ${{ steps.meta.outputs.cgo_enabled }}
+          BUILD_FLAGS: ${{ steps.meta.outputs.build_flags }}
+          ARCHS: ${{ steps.meta.outputs.archs }}
+          PACKAGE_SUBDIR: ${{ steps.meta.outputs.package_subdir }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          export GOFLAGS="$BUILD_FLAGS"
+
+          INSTALL_TARGET="${MODULE}@v${VERSION}"
+          if [ -n "$PACKAGE_SUBDIR" ]; then
+            INSTALL_TARGET="${MODULE}/${PACKAGE_SUBDIR}@v${VERSION}"
+          fi
+
+          for ARCH in $ARCHS; do
+            export GOOS="${ARCH%-*}"
+            export GOARCH="${ARCH#*-}"
+            STAGE=$(mktemp -d)
+            export GOBIN="$STAGE"
+
+            echo "==> $ARCH (GOOS=$GOOS GOARCH=$GOARCH CGO_ENABLED=$CGO_ENABLED)"
+            go install "$INSTALL_TARGET"
+
+            # Cross-compiled binaries land in $GOBIN/$GOOS_$GOARCH/<name>;
+            # native builds land in $GOBIN/<name>.
+            if [ -f "$STAGE/${GOOS}_${GOARCH}/${BINARY}" ]; then
+              SRC="$STAGE/${GOOS}_${GOARCH}/${BINARY}"
+            elif [ -f "$STAGE/${BINARY}" ]; then
+              SRC="$STAGE/${BINARY}"
+            else
+              echo "::error::Binary not found in $STAGE after build"
+              find "$STAGE"
+              exit 1
+            fi
+
+            DEST="dist/${BINARY}-${VERSION}-${ARCH}"
+            mv "$SRC" "$DEST"
+            shasum -a 256 "$DEST" | awk '{print $1}' > "${DEST}.sha256"
+            SIZE=$(wc -c < "$DEST" | tr -d ' ')
+            echo "==> wrote $DEST ($SIZE bytes, sha256 $(cat ${DEST}.sha256))"
+          done
+
+          ls -la dist/
+
+      - name: Create release and upload assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+          BINARY: ${{ steps.meta.outputs.binary }}
+          VERSION: ${{ steps.meta.outputs.version }}
+          MODULE: ${{ steps.meta.outputs.module }}
+          REPO: ${{ steps.meta.outputs.repo }}
+          LICENSE_URL: ${{ steps.meta.outputs.license_url }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          NOTES_FILE=$(mktemp)
+          cat > "$NOTES_FILE" <<EOF
+          Mirrored build of [\`${BINARY}\`](https://github.com/${REPO}) v${VERSION}.
+
+          ## Provenance
+
+          - Source module: \`${MODULE}@v${VERSION}\`
+          - Build host: hosted GitHub Actions \`macos-14\` runner
+          - Workflow run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
+          - Manifest: [\`manifests/${BINARY}.yaml\`](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/blob/${GITHUB_SHA}/manifests/${BINARY}.yaml)
+          - Build flags: \`-trimpath -buildvcs=false\`, \`CGO_ENABLED=0\` (per manifest)
+
+          ## Trust model
+
+          These assets are **not** codesigned. The Stallari daemon trusts them via:
+          1. TLS to GitHub Releases for download
+          2. SHA256 match against a pin compiled into the signed harness \`.app\`
+          3. \`com.apple.quarantine\` xattr stripped after SHA verify
+
+          Apple Developer ID secrets do not belong in CI; the trust root is the harness, not these binaries.
+
+          ## Verifying
+
+          \`\`\`
+          shasum -a 256 -c ${BINARY}-${VERSION}-darwin-arm64.sha256
+          \`\`\`
+
+          ## Upstream license
+
+          ${LICENSE_URL}
+          EOF
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "==> Release $TAG already exists; updating notes and uploading assets"
+            gh release edit "$TAG" --notes-file "$NOTES_FILE"
+          else
+            gh release create "$TAG" --title "$TAG" --notes-file "$NOTES_FILE"
+          fi
+          gh release upload "$TAG" dist/* --clobber

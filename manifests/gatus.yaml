@@ -1,0 +1,23 @@
+binary: gatus
+version: "5.13.0"
+
+upstream:
+  repository: TwiN/gatus
+  module: github.com/TwiN/gatus/v5
+  license: https://github.com/TwiN/gatus/blob/v5.13.0/LICENSE.md
+  homepage: https://gatus.io
+
+purpose: |
+  Uptime monitoring and dashboard. Surfaced in the Stallari mesh as the
+  family-org status board (DD-191 P1a). The Stallari daemon writes the
+  Gatus YAML config to ~/.stallari/managed/gatus/config.yaml; the binary
+  reads GATUS_CONFIG_FILE and listens on localhost:8081/uptime.
+
+build:
+  go_version: "1.26"
+  cgo_enabled: false
+  flags: "-trimpath -buildvcs=false"
+
+architectures:
+  - darwin-arm64
+  - darwin-amd64

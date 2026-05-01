@@ -1,0 +1,32 @@
+# Manifest template for a managed binary.
+#
+# Copy to manifests/<binary>.yaml and fill in. The CI workflow keys off the
+# filename for the binary id (e.g. manifests/gatus.yaml → binary id "gatus").
+# Push tag "<binary>-v<version>" to trigger a build; the tag's version must
+# match this file's `version:` field exactly.
+
+binary: example                          # Stable id; matches filename and tag prefix
+version: "0.0.0"                         # Upstream tagged version, no leading 'v'
+
+upstream:
+  repository: org/repo                   # GitHub repo, for release-notes link
+  module: github.com/org/repo            # Go module path passed to `go install`
+  license: https://github.com/org/repo/blob/master/LICENSE
+  homepage: https://example.com          # Optional
+
+purpose: |                               # One paragraph; appears in release notes
+  Short statement of what this binary does and which Stallari subsystem
+  consumes it. Cite the relevant DD.
+
+build:
+  go_version: "1.26"                     # Pinned for reproducibility; bump when upstream go.mod requires
+  cgo_enabled: false                     # true only if upstream needs CGO (e.g. SQLite-with-libsqlite)
+  flags: "-trimpath -buildvcs=false"     # Standard reproducibility flags; do not change without justification
+
+architectures:                           # macOS-only for now; add linux/windows when daemon ports require
+  - darwin-arm64
+  - darwin-amd64
+
+# Optional: subdirectory inside the upstream module containing the main package.
+# Default is the module root (`go install module@version`).
+# package_subdir: cmd/binname

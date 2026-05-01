@@ -1,0 +1,16 @@
+# Build output
+dist/
+*.sha256.bak
+
+# macOS
+.DS_Store
+
+# Editor
+.vscode/
+.idea/
+*.swp
+
+# Go
+go.sum
+*.test
+*.out
