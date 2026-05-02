@@ -1,0 +1,31 @@
+binary: litestream
+version: "0.5.11"
+
+upstream:
+  repository: benbjohnson/litestream
+  module: github.com/benbjohnson/litestream
+  license: https://github.com/benbjohnson/litestream/blob/v0.5.11/LICENSE
+  homepage: https://litestream.io
+
+purpose: |
+  Continuous SQLite WAL replication for active/backup failover (DD-215 Phase D).
+  Replicates the ntfy server's user.db and message.db from the active dispatch
+  host to the standby dispatch host over the mesh (Pulse, DD-159). On primary
+  rotation the standby restores from the latest WAL and starts the ntfy
+  supervisor; the old primary becomes the follower on return. Single-binary,
+  Apache-2.0, no external dependencies.
+
+build:
+  go_version: "1.26"
+  cgo_enabled: false
+  flags: "-trimpath -buildvcs=false"
+  package_subdir: cmd/litestream
+
+architectures:
+  - darwin-arm64
+# Litestream's go.mod requires both mattn/go-sqlite3 (CGO) and modernc.org/sqlite
+# (pure Go). The cmd/litestream binary uses the pure-Go modernc backend by
+# default; if the CI build fails with CGO_ENABLED=0 (e.g. an indirect dep pulls
+# CGO), flip cgo_enabled to true before tagging. Linux ports for off-box
+# backup destinations will need separate runners with cross-toolchains —
+# defer until a non-mac standby host is in scope.
