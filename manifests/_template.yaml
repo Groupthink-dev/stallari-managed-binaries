@@ -22,6 +22,11 @@ build:
   go_version: "1.26"                     # Pinned for reproducibility; bump when upstream go.mod requires
   cgo_enabled: false                     # true only if upstream needs CGO (e.g. SQLite-with-libsqlite)
   flags: "-trimpath -buildvcs=false"     # Standard reproducibility flags; do not change without justification
+  build_method: install                  # 'install' (default) → go install module@version
+                                         # 'source-checkout'   → git clone repo@tag + go build .
+                                         # Use source-checkout when upstream go.mod has 'replace'
+                                         # directives — `go install` refuses them. Trade-off:
+                                         # provenance shifts from module-proxy to git-tag.
 
 architectures:                           # Stallari runs on Apple Silicon only — do not add darwin-amd64.
   - darwin-arm64                         # Add linux-arm64 / linux-amd64 when a daemon port requires them.

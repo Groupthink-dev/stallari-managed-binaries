@@ -51,6 +51,7 @@ jobs:
           print(f"BUILD_FLAGS='{b.get('flags', '-trimpath -buildvcs=false')}'")
           print(f"ARCHS='{' '.join(m['architectures'])}'")
           print(f"PACKAGE_SUBDIR='{b.get('package_subdir', '')}'")
+          print(f"BUILD_METHOD='{b.get('build_method', 'install')}'")
           PY
           )"
 
@@ -70,6 +71,7 @@ jobs:
             echo "build_flags=$BUILD_FLAGS"
             echo "archs=$ARCHS"
             echo "package_subdir=$PACKAGE_SUBDIR"
+            echo "build_method=$BUILD_METHOD"
           } >> "$GITHUB_OUTPUT"
 
           echo "==> Building $BINARY v$VERSION for archs: $ARCHS"
@@ -85,19 +87,16 @@ jobs:
           BINARY: ${{ steps.meta.outputs.binary }}
           VERSION: ${{ steps.meta.outputs.version }}
           MODULE: ${{ steps.meta.outputs.module }}
+          REPO: ${{ steps.meta.outputs.repo }}
           CGO_ENABLED: ${{ steps.meta.outputs.cgo_enabled }}
           BUILD_FLAGS: ${{ steps.meta.outputs.build_flags }}
           ARCHS: ${{ steps.meta.outputs.archs }}
           PACKAGE_SUBDIR: ${{ steps.meta.outputs.package_subdir }}
+          BUILD_METHOD: ${{ steps.meta.outputs.build_method }}
         run: |
           set -euo pipefail
           mkdir -p dist
           export GOFLAGS="$BUILD_FLAGS"
-
-          INSTALL_TARGET="${MODULE}@v${VERSION}"
-          if [ -n "$PACKAGE_SUBDIR" ]; then
-            INSTALL_TARGET="${MODULE}/${PACKAGE_SUBDIR}@v${VERSION}"
-          fi
 
           for ARCH in $ARCHS; do
             export GOOS="${ARCH%-*}"
@@ -109,8 +108,44 @@ jobs:
             unset GOBIN
             export GOPATH="$STAGE"
 
-            echo "==> $ARCH (GOOS=$GOOS GOARCH=$GOARCH CGO_ENABLED=$CGO_ENABLED)"
-            go install "$INSTALL_TARGET"
+            echo "==> $ARCH (GOOS=$GOOS GOARCH=$GOARCH CGO_ENABLED=$CGO_ENABLED method=$BUILD_METHOD)"
+
+            case "$BUILD_METHOD" in
+              install)
+                # Default path. `go install <module>@<version>` resolves via
+                # the module proxy and lands the binary in $GOPATH/bin (with
+                # an arch subdir for cross-compile).
+                INSTALL_TARGET="${MODULE}@v${VERSION}"
+                if [ -n "$PACKAGE_SUBDIR" ]; then
+                  INSTALL_TARGET="${MODULE}/${PACKAGE_SUBDIR}@v${VERSION}"
+                fi
+                go install "$INSTALL_TARGET"
+                ;;
+
+              source-checkout)
+                # `go install module@version` refuses to honour `replace`
+                # directives in the target module's go.mod. The only way to
+                # respect them is to clone the upstream repo at the version
+                # tag and let its go.mod be the main module. Used by ntfy
+                # (replace github.com/emersion/go-smtp => v0.17.0 for #839).
+                # Provenance shifts from module-proxy@version to repo@tag —
+                # both still pin a single immutable upstream artifact.
+                SRC_DIR="$STAGE/src"
+                git clone --depth 1 --branch "v${VERSION}" "https://github.com/${REPO}.git" "$SRC_DIR"
+                BUILD_DIR="$SRC_DIR"
+                if [ -n "$PACKAGE_SUBDIR" ]; then
+                  BUILD_DIR="$SRC_DIR/$PACKAGE_SUBDIR"
+                fi
+                mkdir -p "$STAGE/bin"
+                BUILD_OUT="$STAGE/bin/${BINARY}"
+                ( cd "$BUILD_DIR" && go build -o "$BUILD_OUT" . )
+                ;;
+
+              *)
+                echo "::error::Unknown build_method '$BUILD_METHOD' (expected 'install' or 'source-checkout')"
+                exit 1
+                ;;
+            esac
 
             if [ -f "$STAGE/bin/${GOOS}_${GOARCH}/${BINARY}" ]; then
               SRC="$STAGE/bin/${GOOS}_${GOARCH}/${BINARY}"

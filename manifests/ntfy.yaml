@@ -18,6 +18,11 @@ build:
   go_version: "1.26"
   cgo_enabled: true
   flags: "-trimpath -buildvcs=false"
+  # ntfy's go.mod pins emersion/go-smtp via a `replace` directive (upstream
+  # issue #839). `go install heckel.io/ntfy/v2@vX` refuses replace directives,
+  # so the workflow clones the repo at the tag and builds from the source
+  # tree where the tag's go.mod becomes the main module.
+  build_method: source-checkout
 
 architectures:
   - darwin-arm64
