@@ -1,0 +1,28 @@
+binary: ntfy
+version: "2.11.0"
+
+upstream:
+  repository: binwiederhier/ntfy
+  module: heckel.io/ntfy/v2
+  license: https://github.com/binwiederhier/ntfy/blob/v2.11.0/LICENSE
+  homepage: https://ntfy.sh
+
+purpose: |
+  Self-hosted pub/sub notification server. Surfaced in the Stallari mesh as
+  the family-org notification backbone (DD-191 P1a, DD-215). The Stallari
+  daemon writes ntfy server config to ~/.stallari/managed/ntfy/ and
+  supervises a single ntfy process listening on localhost:8080. Authentication
+  is local (user.db); pack/skill topics are ACL-scoped per-operator.
+
+build:
+  go_version: "1.26"
+  cgo_enabled: true
+  flags: "-trimpath -buildvcs=false"
+
+architectures:
+  - darwin-arm64
+# CGO is required: heckel.io/ntfy/v2 depends on github.com/mattn/go-sqlite3
+# for its auth/message store. Cross-compilation with CGO=1 is non-trivial,
+# so we restrict to the runner's native arch (macos-14 = darwin/arm64).
+# Linux ports for tunnel-host scenarios will require a separate runner with
+# the appropriate cross-toolchain — defer until needed.
