@@ -52,6 +52,10 @@ jobs:
           print(f"ARCHS='{' '.join(m['architectures'])}'")
           print(f"PACKAGE_SUBDIR='{b.get('package_subdir', '')}'")
           print(f"BUILD_METHOD='{b.get('build_method', 'install')}'")
+          ub = b.get('upstream_binary') or {}
+          print(f"UPSTREAM_URL_TEMPLATE='{ub.get('url_template', '')}'")
+          print(f"UPSTREAM_ARCHIVE_FORMAT='{ub.get('archive_format', '')}'")
+          print(f"UPSTREAM_EXTRACT_PATH='{ub.get('extract_path', '')}'")
           PY
           )"
 
@@ -72,11 +76,15 @@ jobs:
             echo "archs=$ARCHS"
             echo "package_subdir=$PACKAGE_SUBDIR"
             echo "build_method=$BUILD_METHOD"
+            echo "upstream_url_template=$UPSTREAM_URL_TEMPLATE"
+            echo "upstream_archive_format=$UPSTREAM_ARCHIVE_FORMAT"
+            echo "upstream_extract_path=$UPSTREAM_EXTRACT_PATH"
           } >> "$GITHUB_OUTPUT"
 
           echo "==> Building $BINARY v$VERSION for archs: $ARCHS"
 
       - uses: actions/setup-go@v5
+        if: steps.meta.outputs.build_method != 'upstream-binary'
         with:
           go-version: ${{ steps.meta.outputs.go_version }}
           cache: false
@@ -93,6 +101,9 @@ jobs:
           ARCHS: ${{ steps.meta.outputs.archs }}
           PACKAGE_SUBDIR: ${{ steps.meta.outputs.package_subdir }}
           BUILD_METHOD: ${{ steps.meta.outputs.build_method }}
+          UPSTREAM_URL_TEMPLATE: ${{ steps.meta.outputs.upstream_url_template }}
+          UPSTREAM_ARCHIVE_FORMAT: ${{ steps.meta.outputs.upstream_archive_format }}
+          UPSTREAM_EXTRACT_PATH: ${{ steps.meta.outputs.upstream_extract_path }}
         run: |
           set -euo pipefail
           mkdir -p dist
@@ -141,8 +152,45 @@ jobs:
                 ( cd "$BUILD_DIR" && go build -o "$BUILD_OUT" . )
                 ;;
 
+              upstream-binary)
+                # Mirror upstream's prebuilt release artifact instead of
+                # rebuilding from source. Use this when upstream still ships
+                # working darwin binaries (ntfy) and rebuilding is just
+                # recreating what they already publish, often with heavy
+                # toolchain dependencies (mkdocs, npm, etc. for go:embed
+                # assets). Trust posture is unchanged: TLS to GH Releases +
+                # SHA256 pin compiled into the signed harness `.app`.
+                if [ -z "$UPSTREAM_URL_TEMPLATE" ] || [ -z "$UPSTREAM_ARCHIVE_FORMAT" ] || [ -z "$UPSTREAM_EXTRACT_PATH" ]; then
+                  echo "::error::build_method=upstream-binary requires upstream_binary.{url_template,archive_format,extract_path}"
+                  exit 1
+                fi
+                URL=$(echo "$UPSTREAM_URL_TEMPLATE" | sed -e "s|{repo}|$REPO|g" -e "s|{version}|$VERSION|g")
+                EXTRACT=$(echo "$UPSTREAM_EXTRACT_PATH" | sed -e "s|{repo}|$REPO|g" -e "s|{version}|$VERSION|g")
+                ARCHIVE="$STAGE/upstream.archive"
+                echo "==> downloading $URL"
+                curl -fL --retry 3 -o "$ARCHIVE" "$URL"
+                case "$UPSTREAM_ARCHIVE_FORMAT" in
+                  tar.gz|tgz) tar -xzf "$ARCHIVE" -C "$STAGE" ;;
+                  tar.bz2)    tar -xjf "$ARCHIVE" -C "$STAGE" ;;
+                  zip)        unzip -q "$ARCHIVE" -d "$STAGE" ;;
+                  *)
+                    echo "::error::unknown archive format '$UPSTREAM_ARCHIVE_FORMAT' (expected tar.gz, tar.bz2, or zip)"
+                    exit 1
+                    ;;
+                esac
+                EXTRACTED="$STAGE/$EXTRACT"
+                if [ ! -f "$EXTRACTED" ]; then
+                  echo "::error::expected binary at $EXTRACTED not found in archive — checking $STAGE contents:"
+                  find "$STAGE" -type f -not -path "*/upstream.archive" | head -30
+                  exit 1
+                fi
+                mkdir -p "$STAGE/bin"
+                cp "$EXTRACTED" "$STAGE/bin/${BINARY}"
+                chmod +x "$STAGE/bin/${BINARY}"
+                ;;
+
               *)
-                echo "::error::Unknown build_method '$BUILD_METHOD' (expected 'install' or 'source-checkout')"
+                echo "::error::Unknown build_method '$BUILD_METHOD' (expected 'install', 'source-checkout', or 'upstream-binary')"
                 exit 1
                 ;;
             esac

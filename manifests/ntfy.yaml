@@ -15,14 +15,24 @@ purpose: |
   is local (user.db); pack/skill topics are ACL-scoped per-operator.
 
 build:
+  # Source-build was attempted (replace directives + source-checkout pivot)
+  # but ntfy's `server/server.go` uses `//go:embed site` and `//go:embed docs`,
+  # which require pre-populated directories produced by upstream's
+  # `make web docs` (Node + mkdocs toolchain). Rather than carry that build
+  # complexity for every CI run, mirror upstream's prebuilt darwin tarball
+  # — it's a universal binary with all assets baked in. Trust posture is
+  # unchanged: TLS to GH + SHA256 pin in the signed harness `.app`.
+  build_method: upstream-binary
+  upstream_binary:
+    url_template: "https://github.com/{repo}/releases/download/v{version}/ntfy_{version}_darwin_all.tar.gz"
+    archive_format: tar.gz
+    extract_path: "ntfy_{version}_darwin_all/ntfy"
+  # The fields below are unused for build_method=upstream-binary but kept for
+  # documentary purposes — they describe what a from-source rebuild would
+  # require if upstream ever stops shipping darwin binaries.
   go_version: "1.26"
   cgo_enabled: true
   flags: "-trimpath -buildvcs=false"
-  # ntfy's go.mod pins emersion/go-smtp via a `replace` directive (upstream
-  # issue #839). `go install heckel.io/ntfy/v2@vX` refuses replace directives,
-  # so the workflow clones the repo at the tag and builds from the source
-  # tree where the tag's go.mod becomes the main module.
-  build_method: source-checkout
 
 architectures:
   - darwin-arm64

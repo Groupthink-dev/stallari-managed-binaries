@@ -24,9 +24,24 @@ build:
   flags: "-trimpath -buildvcs=false"     # Standard reproducibility flags; do not change without justification
   build_method: install                  # 'install' (default) → go install module@version
                                          # 'source-checkout'   → git clone repo@tag + go build .
+                                         # 'upstream-binary'   → download upstream's prebuilt
+                                         #                       release artifact, extract, repack.
                                          # Use source-checkout when upstream go.mod has 'replace'
-                                         # directives — `go install` refuses them. Trade-off:
-                                         # provenance shifts from module-proxy to git-tag.
+                                         # directives — `go install` refuses them.
+                                         # Use upstream-binary when upstream still ships working
+                                         # binaries that we'd otherwise be rebuilding only to
+                                         # recreate what they already publish (heavy toolchain,
+                                         # go:embed assets requiring mkdocs/npm, etc.). Trust
+                                         # posture is unchanged: SHA pin in signed harness `.app`
+                                         # is the integrity guarantee, not the build path.
+
+# Required when build_method is 'upstream-binary'. Templates may use {repo} and
+# {version} substitutions; both are taken from the manifest's upstream block
+# and version field.
+# upstream_binary:
+#   url_template: "https://github.com/{repo}/releases/download/v{version}/foo_{version}_darwin_all.tar.gz"
+#   archive_format: tar.gz                # tar.gz, tar.bz2, or zip
+#   extract_path: "foo_{version}_darwin_all/foo"   # path inside archive to the binary
 
 architectures:                           # Stallari runs on Apple Silicon only — do not add darwin-amd64.
   - darwin-arm64                         # Add linux-arm64 / linux-amd64 when a daemon port requires them.
