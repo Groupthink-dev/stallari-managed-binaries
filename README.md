@@ -32,6 +32,8 @@ This repo runs a single tag-triggered workflow on a hosted `macos-14` GitHub Act
 | Binary | Upstream | Purpose | Architecture | Latest |
 |---|---|---|---|---|
 | [`gatus`](manifests/gatus.yaml) | [TwiN/gatus](https://github.com/TwiN/gatus) | Uptime monitoring + dashboard | `darwin-arm64` | [`gatus-v5.13.0`](https://github.com/Groupthink-dev/stallari-managed-binaries/releases/tag/gatus-v5.13.0) |
+| [`ntfy`](manifests/ntfy.yaml) | [binwiederhier/ntfy](https://github.com/binwiederhier/ntfy) | Self-hosted pub/sub notifications | `darwin-arm64` | `ntfy-v2.11.0` _(pending tag)_ |
+| [`litestream`](manifests/litestream.yaml) | [benbjohnson/litestream](https://github.com/benbjohnson/litestream) | SQLite WAL replication for active/backup failover | `darwin-arm64` | `litestream-v0.5.11` _(pending tag)_ |
 | `cloudflared` | [cloudflare/cloudflared](https://github.com/cloudflare/cloudflared) | Cloudflare Tunnel client (planned) | `darwin-arm64` | _planned_ |
 | `lego` | [go-acme/lego](https://github.com/go-acme/lego) | ACME client (planned) | `darwin-arm64` | _planned_ |
 
@@ -103,7 +105,9 @@ Within Go's well-known reproducibility caveats (with `-trimpath` and `CGO_ENABLE
 stallari-managed-binaries/
 ├── manifests/
 │   ├── _template.yaml      # schema reference
-│   └── gatus.yaml          # one file per supported binary
+│   ├── gatus.yaml          # one file per supported binary
+│   ├── ntfy.yaml
+│   └── litestream.yaml
 ├── .github/
 │   └── workflows/
 │       └── build.yml       # tag-triggered build + release
@@ -181,7 +185,7 @@ Code in this repository — workflows, manifests, scripts, docs — is **MIT-lic
 
 For bugs in the build pipeline (workflow, manifest schema, signing policy): open a PR or issue here.
 
-For bugs in a *binary* (Gatus crashes, cloudflared misbehaves, lego fails): those belong upstream — file with `TwiN/gatus`, `cloudflare/cloudflared`, `go-acme/lego`. We don't patch upstream code; we mirror tagged releases verbatim.
+For bugs in a *binary* (Gatus crashes, ntfy misbehaves, Litestream replication stalls, cloudflared loses its tunnel, lego fails): those belong upstream — file with `TwiN/gatus`, `binwiederhier/ntfy`, `benbjohnson/litestream`, `cloudflare/cloudflared`, `go-acme/lego`. We don't patch upstream code; we mirror tagged releases verbatim.
 
 For security concerns about Stallari's overall trust model: open a [security advisory on `stallari-harness`](https://github.com/Groupthink-dev/stallari-harness/security/advisories/new).
 
