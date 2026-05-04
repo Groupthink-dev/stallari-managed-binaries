@@ -1,5 +1,6 @@
 binary: ntfy
-version: "2.11.0"
+version: "2.11.0-server.1"
+upstream_version: "2.11.0"
 
 upstream:
   repository: binwiederhier/ntfy
@@ -15,24 +16,40 @@ purpose: |
   is local (user.db); pack/skill topics are ACL-scoped per-operator.
 
 build:
-  # Source-build was attempted (replace directives + source-checkout pivot)
-  # but ntfy's `server/server.go` uses `//go:embed site` and `//go:embed docs`,
-  # which require pre-populated directories produced by upstream's
-  # `make web docs` (Node + mkdocs toolchain). Rather than carry that build
-  # complexity for every CI run, mirror upstream's prebuilt darwin tarball
-  # — it's a universal binary with all assets baked in. Trust posture is
-  # unchanged: TLS to GH + SHA256 pin in the signed harness `.app`.
-  build_method: upstream-binary
-  upstream_binary:
-    url_template: "https://github.com/{repo}/releases/download/v{version}/ntfy_{version}_darwin_all.tar.gz"
-    archive_format: tar.gz
-    extract_path: "ntfy_{version}_darwin_all/ntfy"
-  # The fields below are unused for build_method=upstream-binary but kept for
-  # documentary purposes — they describe what a from-source rebuild would
-  # require if upstream ever stops shipping darwin binaries.
+  # Upstream's prebuilt `ntfy_*_darwin_all.tar.gz` is a client-only build —
+  # `go build` is invoked with `-tags noserver`, so the resulting `ntfy`
+  # binary has only `publish` / `subscribe` and the `serve` subcommand the
+  # daemon needs is absent ("No help topic for 'serve'" at runtime).
+  #
+  # Build a server-capable darwin/arm64 binary from source instead. The
+  # blocker that originally pushed us to upstream-binary was `//go:embed site`
+  # and `//go:embed docs` requiring `make web docs` (Node + mkdocs). Stallari
+  # uses ntfy as a backend pub/sub layer, not for its web UI — the operator
+  # surface is Stallari Settings → Add-ons → ntfy, never the ntfy default
+  # index page. So `pre_build` stubs the embed directories with placeholder
+  # files (cheap, zero extra deps), the embed succeeds, and the resulting
+  # binary serves the API without the upstream UI assets. Anyone who hits
+  # `https://stallari-ntfy.<suffix>/` in a browser sees a placeholder page;
+  # the `/v1/*` API surface ntfy clients use is fully functional.
+  build_method: source-checkout
   go_version: "1.26"
   cgo_enabled: true
   flags: "-trimpath -buildvcs=false"
+  pre_build: |
+    # Populate the //go:embed targets with stubs so `go build` succeeds
+    # without running upstream's `make web docs` (npm + mkdocs toolchain).
+    # The web UI is replaced by a single placeholder index; the API surface
+    # is unchanged. If we ever need the upstream UI shipped here, swap this
+    # block for `make web docs` and add `setup-node` + python deps to the
+    # workflow.
+    mkdir -p server/site server/docs
+    cat > server/site/index.html <<'HTML'
+    <!doctype html><meta charset="utf-8"><title>ntfy</title>
+    <p>This ntfy server is managed by Stallari. The default web UI is not
+    bundled — operate via Stallari Settings → Add-ons → ntfy, or via the
+    <code>/v1/*</code> API.</p>
+    HTML
+    : > server/docs/index.html
 
 architectures:
   - darwin-arm64

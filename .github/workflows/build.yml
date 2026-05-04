@@ -39,10 +39,16 @@ jobs:
 
           # Extract values via python yaml (always present on macos runners)
           eval "$(python3 - "$MANIFEST" <<'PY'
-          import sys, yaml
+          import sys, yaml, base64
           m = yaml.safe_load(open(sys.argv[1]))
           b = m.get('build', {})
           print(f"MANIFEST_VERSION='{m['version']}'")
+          # Upstream version drives source-checkout / install resolution.
+          # When unset (default), it equals the manifest version — preserves
+          # behaviour for binaries whose tag matches upstream exactly. When
+          # set, it lets us suffix our `version` (e.g. "2.11.0-server.1")
+          # without losing the upstream tag we actually clone (`v2.11.0`).
+          print(f"UPSTREAM_VERSION='{m.get('upstream_version', m['version'])}'")
           print(f"GO_VERSION='{b.get('go_version', '1.26')}'")
           print(f"MODULE='{m['upstream']['module']}'")
           print(f"REPO='{m['upstream']['repository']}'")
@@ -52,6 +58,11 @@ jobs:
           print(f"ARCHS='{' '.join(m['architectures'])}'")
           print(f"PACKAGE_SUBDIR='{b.get('package_subdir', '')}'")
           print(f"BUILD_METHOD='{b.get('build_method', 'install')}'")
+          # pre_build is a multi-line shell snippet — base64 it across the
+          # GHA env hop so newlines and quotes survive intact.
+          pre_build = b.get('pre_build', '') or ''
+          encoded = base64.b64encode(pre_build.encode('utf-8')).decode('ascii')
+          print(f"PRE_BUILD_B64='{encoded}'")
           ub = b.get('upstream_binary') or {}
           print(f"UPSTREAM_URL_TEMPLATE='{ub.get('url_template', '')}'")
           print(f"UPSTREAM_ARCHIVE_FORMAT='{ub.get('archive_format', '')}'")
@@ -67,6 +78,7 @@ jobs:
           {
             echo "binary=$BINARY"
             echo "version=$VERSION"
+            echo "upstream_version=$UPSTREAM_VERSION"
             echo "go_version=$GO_VERSION"
             echo "module=$MODULE"
             echo "repo=$REPO"
@@ -76,6 +88,7 @@ jobs:
             echo "archs=$ARCHS"
             echo "package_subdir=$PACKAGE_SUBDIR"
             echo "build_method=$BUILD_METHOD"
+            echo "pre_build_b64=$PRE_BUILD_B64"
             echo "upstream_url_template=$UPSTREAM_URL_TEMPLATE"
             echo "upstream_archive_format=$UPSTREAM_ARCHIVE_FORMAT"
             echo "upstream_extract_path=$UPSTREAM_EXTRACT_PATH"
@@ -94,6 +107,7 @@ jobs:
         env:
           BINARY: ${{ steps.meta.outputs.binary }}
           VERSION: ${{ steps.meta.outputs.version }}
+          UPSTREAM_VERSION: ${{ steps.meta.outputs.upstream_version }}
           MODULE: ${{ steps.meta.outputs.module }}
           REPO: ${{ steps.meta.outputs.repo }}
           CGO_ENABLED: ${{ steps.meta.outputs.cgo_enabled }}
@@ -101,6 +115,7 @@ jobs:
           ARCHS: ${{ steps.meta.outputs.archs }}
           PACKAGE_SUBDIR: ${{ steps.meta.outputs.package_subdir }}
           BUILD_METHOD: ${{ steps.meta.outputs.build_method }}
+          PRE_BUILD_B64: ${{ steps.meta.outputs.pre_build_b64 }}
           UPSTREAM_URL_TEMPLATE: ${{ steps.meta.outputs.upstream_url_template }}
           UPSTREAM_ARCHIVE_FORMAT: ${{ steps.meta.outputs.upstream_archive_format }}
           UPSTREAM_EXTRACT_PATH: ${{ steps.meta.outputs.upstream_extract_path }}
@@ -125,10 +140,12 @@ jobs:
               install)
                 # Default path. `go install <module>@<version>` resolves via
                 # the module proxy and lands the binary in $GOPATH/bin (with
-                # an arch subdir for cross-compile).
-                INSTALL_TARGET="${MODULE}@v${VERSION}"
+                # an arch subdir for cross-compile). Uses UPSTREAM_VERSION so
+                # a manifest with a suffixed `version` (e.g. "2.11.0-server.1")
+                # still resolves the correct upstream module tag.
+                INSTALL_TARGET="${MODULE}@v${UPSTREAM_VERSION}"
                 if [ -n "$PACKAGE_SUBDIR" ]; then
-                  INSTALL_TARGET="${MODULE}/${PACKAGE_SUBDIR}@v${VERSION}"
+                  INSTALL_TARGET="${MODULE}/${PACKAGE_SUBDIR}@v${UPSTREAM_VERSION}"
                 fi
                 go install "$INSTALL_TARGET"
                 ;;
@@ -141,11 +158,26 @@ jobs:
                 # (replace github.com/emersion/go-smtp => v0.17.0 for #839).
                 # Provenance shifts from module-proxy@version to repo@tag —
                 # both still pin a single immutable upstream artifact.
+                #
+                # The clone target is UPSTREAM_VERSION, not VERSION, so a
+                # manifest may carry a suffixed `version` while still
+                # cloning the upstream tag verbatim.
                 SRC_DIR="$STAGE/src"
-                git clone --depth 1 --branch "v${VERSION}" "https://github.com/${REPO}.git" "$SRC_DIR"
+                git clone --depth 1 --branch "v${UPSTREAM_VERSION}" "https://github.com/${REPO}.git" "$SRC_DIR"
                 BUILD_DIR="$SRC_DIR"
                 if [ -n "$PACKAGE_SUBDIR" ]; then
                   BUILD_DIR="$SRC_DIR/$PACKAGE_SUBDIR"
+                fi
+                # Optional pre_build hook — runs inside the source checkout
+                # before `go build`. Used by ntfy to stub `//go:embed`
+                # targets so the binary builds without the upstream Node +
+                # mkdocs toolchain. base64-decoded from the manifest.
+                if [ -n "$PRE_BUILD_B64" ]; then
+                  PRE_BUILD_SCRIPT=$(echo "$PRE_BUILD_B64" | base64 -d)
+                  if [ -n "$PRE_BUILD_SCRIPT" ]; then
+                    echo "==> running pre_build hook"
+                    ( cd "$SRC_DIR" && bash -euo pipefail -c "$PRE_BUILD_SCRIPT" )
+                  fi
                 fi
                 mkdir -p "$STAGE/bin"
                 BUILD_OUT="$STAGE/bin/${BINARY}"

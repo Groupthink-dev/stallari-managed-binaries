@@ -6,7 +6,15 @@
 # match this file's `version:` field exactly.
 
 binary: example                          # Stable id; matches filename and tag prefix
-version: "0.0.0"                         # Upstream tagged version, no leading 'v'
+version: "0.0.0"                         # Build-artifact version (matches the tag's -v suffix).
+                                         # Usually equals upstream_version. Suffix
+                                         # (e.g. "0.0.0-server.1") when this build
+                                         # diverges from upstream's binary while
+                                         # pointing at the same upstream tag.
+# upstream_version: "0.0.0"              # Optional. Upstream tag to clone/install
+                                         # for `source-checkout` / `install`. Defaults
+                                         # to `version`. Set when `version` carries a
+                                         # Stallari-side suffix.
 
 upstream:
   repository: org/repo                   # GitHub repo, for release-notes link
@@ -22,6 +30,11 @@ build:
   go_version: "1.26"                     # Pinned for reproducibility; bump when upstream go.mod requires
   cgo_enabled: false                     # true only if upstream needs CGO (e.g. SQLite-with-libsqlite)
   flags: "-trimpath -buildvcs=false"     # Standard reproducibility flags; do not change without justification
+  # pre_build: |                          # Optional shell snippet (multi-line OK).
+  #   echo "runs inside source-checkout"  # Runs inside the git checkout, before
+  #                                       # `go build`. source-checkout only.
+  #                                       # Used by ntfy to stub //go:embed
+  #                                       # targets without upstream's npm + mkdocs.
   build_method: install                  # 'install' (default) → go install module@version
                                          # 'source-checkout'   → git clone repo@tag + go build .
                                          # 'upstream-binary'   → download upstream's prebuilt
