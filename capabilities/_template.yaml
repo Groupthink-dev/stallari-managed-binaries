@@ -1,0 +1,62 @@
+# Capability manifest template — copy to capabilities/<binary>.yaml.
+#
+# Pairs with manifests/<binary>.yaml (build spec) — these two files describe
+# the same binary from two angles:
+#   - manifests/<binary>.yaml — Go module, version, CGO flags, architectures
+#     (consumed by GitHub Actions at tag-push time)
+#   - capabilities/<binary>.yaml — runtime envelope (consumed by
+#     stallari-supervisord at spawn time to synthesise a sandbox-exec profile)
+#
+# Schema lives at schema/capability-manifest.schema.json (vendored from
+# stallari-managed-binary-spec). Validate locally before PR:
+#
+#   npx ajv-cli validate \
+#     -s schema/capability-manifest.schema.json \
+#     -d capabilities/<binary>.yaml \
+#     --spec=draft2020 --strict=false
+
+spec_version: "1.0"
+binary: <name>                    # must match manifests/<binary>.yaml's binary field
+purpose: |
+  One- to three-paragraph description of what this binary does, why Stallari
+  supervises it, and what user-visible feature it surfaces.
+
+# Lifecycle — how supervisord restarts + shuts down the binary.
+lifecycle:
+  keep_alive: true                # whether to restart on exit
+  restart_on_exit: always         # always | unless_clean | never
+  graceful_shutdown_signal: SIGTERM
+  graceful_shutdown_timeout_seconds: 30
+
+# Filesystem — sandboxed mount shape. Working dir is per-binary scratch;
+# additional read/write mounts must be justified.
+filesystem:
+  working_dir: 'state(.managed("<name>"))'
+  # config_path: 'state(.managed("<name>"))/config.yaml'   # optional
+  read_only_mounts:
+    # - "/etc/ssl/certs"          # only if the binary needs system TLS roots
+  write_mounts: []                 # default: working_dir is the only writable root
+
+# Network — egress + ingress posture.
+network:
+  egress: deny                     # deny | allow_with_allowlist
+  egress_allowlist: []             # required iff egress == allow_with_allowlist
+  ingress:                         # listening ports (loopback unless privileged)
+    # - port: 8080
+    #   bind: "127.0.0.1"
+
+# Resources — runtime ceilings.
+resources:
+  memory_max_mb: 128               # 16 .. 16384
+  cpu_quota_percent: 25            # 1 .. 800
+
+# Privileges — opt-in only. v1.0 schema rejects `true`.
+privileged: false
+
+# Communication — how supervisord + daemon reach the binary.
+communication:
+  - kind: stdio_log                # ring-buffered stdout/stderr
+    # ring_buffer_lines: 4096
+  # - kind: http_loopback          # daemon proxies inbound traffic
+  #   port: 8080
+  #   auth: bearer                 # bearer | none

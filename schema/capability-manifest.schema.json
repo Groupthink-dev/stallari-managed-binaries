@@ -1,0 +1,316 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.stallari.ai/managed-binary/v1.0.0/manifest.schema.json",
+  "title": "Stallari Managed-Binary Capability Manifest",
+  "description": "Runtime capability + lifecycle manifest for a binary supervised by stallari-supervisord. Companion to the build manifest at stallari-managed-binaries/manifests/<binary>.yaml. Consumed at spawn time to synthesise a sandbox-exec profile (DD-252 Phase C).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "spec_version",
+    "binary",
+    "lifecycle",
+    "filesystem",
+    "network",
+    "resources",
+    "communication"
+  ],
+  "properties": {
+    "spec_version": {
+      "description": "Schema major.minor; the daemon refuses to spawn under a manifest whose major version it does not understand.",
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+$",
+      "examples": [
+        "1.0"
+      ]
+    },
+    "binary": {
+      "description": "Binary name. Must match the `binary:` field of the sibling build manifest at stallari-managed-binaries/manifests/<binary>.yaml.",
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]{1,30}$",
+      "examples": [
+        "gatus",
+        "ntfy",
+        "litestream"
+      ]
+    },
+    "purpose": {
+      "description": "Human-readable description of what this binary does and why Stallari supervises it. Surfaced in Settings → Add-ons.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1000
+    },
+    "lifecycle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "keep_alive",
+        "restart_on_exit",
+        "graceful_shutdown_signal",
+        "graceful_shutdown_timeout_seconds"
+      ],
+      "properties": {
+        "keep_alive": {
+          "description": "Whether supervisord restarts the binary after exit.",
+          "type": "boolean"
+        },
+        "restart_on_exit": {
+          "description": "Restart policy. `always` = restart on any exit. `unless_clean` = only restart on non-zero exit. `never` = no automatic restart.",
+          "type": "string",
+          "enum": [
+            "always",
+            "unless_clean",
+            "never"
+          ]
+        },
+        "graceful_shutdown_signal": {
+          "description": "Signal supervisord sends for graceful shutdown.",
+          "type": "string",
+          "enum": [
+            "SIGTERM",
+            "SIGINT",
+            "SIGHUP",
+            "SIGUSR1",
+            "SIGUSR2"
+          ]
+        },
+        "graceful_shutdown_timeout_seconds": {
+          "description": "Time to wait for the binary to exit cleanly after the graceful signal before sending SIGKILL.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 600
+        }
+      }
+    },
+    "filesystem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "working_dir",
+        "read_only_mounts",
+        "write_mounts"
+      ],
+      "properties": {
+        "working_dir": {
+          "description": "Process working directory. Either a StallariPaths.Class token (e.g. 'state(.managed(\"gatus\"))') or an absolute path. Supervisord resolves tokens at spawn time.",
+          "$ref": "#/$defs/pathExpression"
+        },
+        "config_path": {
+          "description": "Optional path supervisord writes daemon-managed config to. Binary reads via env var (declared in `communication`) or its own --config flag.",
+          "$ref": "#/$defs/pathExpression"
+        },
+        "read_only_mounts": {
+          "description": "Additional read-only filesystem subtrees beyond working_dir. Each entry must be either a StallariPaths.Class token or an absolute path. Use sparingly — every mount widens the sandbox.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/pathExpression"
+          },
+          "uniqueItems": true,
+          "maxItems": 16
+        },
+        "write_mounts": {
+          "description": "Additional writable filesystem subtrees beyond working_dir. Empty array (the default) means working_dir is the only writable location. Use only when the binary genuinely cannot write under working_dir.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/pathExpression"
+          },
+          "uniqueItems": true,
+          "maxItems": 8
+        }
+      }
+    },
+    "network": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "egress",
+        "egress_allowlist",
+        "ingress"
+      ],
+      "properties": {
+        "egress": {
+          "description": "Default egress posture. `deny` = no outbound network. `allow_with_allowlist` = outbound only to entries in egress_allowlist (must be non-empty).",
+          "type": "string",
+          "enum": [
+            "deny",
+            "allow_with_allowlist"
+          ]
+        },
+        "egress_allowlist": {
+          "description": "Allowed outbound hosts when egress is `allow_with_allowlist`. Each entry: `<host-pattern>:<port>`. Supports wildcard subdomain (e.g. `*.example.com:443`). When egress is `deny`, this MUST be empty.",
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^(\\*\\.)?[a-z0-9.-]+:[0-9]{1,5}$"
+          },
+          "uniqueItems": true,
+          "maxItems": 32
+        },
+        "ingress": {
+          "description": "Inbound listening ports. Empty = no listeners. 127.0.0.1 binds are loopback-only (daemon proxies external access). 0.0.0.0 binds require `privileged: true` (and a rationale field; rejected by the secops-scanner rule).",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "port",
+              "bind"
+            ],
+            "properties": {
+              "port": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 65535
+              },
+              "bind": {
+                "type": "string",
+                "enum": [
+                  "127.0.0.1",
+                  "0.0.0.0"
+                ]
+              }
+            }
+          },
+          "uniqueItems": true,
+          "maxItems": 8
+        }
+      }
+    },
+    "resources": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "memory_max_mb",
+        "cpu_quota_percent"
+      ],
+      "properties": {
+        "memory_max_mb": {
+          "description": "Max resident memory in megabytes. Enforced via setrlimit(RLIMIT_AS) under daemon-best-effort, and via Seatbelt under kernel enforcement.",
+          "type": "integer",
+          "minimum": 16,
+          "maximum": 16384
+        },
+        "cpu_quota_percent": {
+          "description": "Max CPU usage as a percentage of one core. Soft ceiling — used for runaway detection rather than hard enforcement.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 800
+        }
+      }
+    },
+    "privileged": {
+      "description": "Opt-in flag for binaries needing extra capabilities (raw sockets, 0.0.0.0 binds, etc.). v1.0 schema accepts the field for forward-compat but disallows `true` values until DD-252 Phase C Q4 nails the semantics. Setting `true` requires a sibling `rationale:` field (enforced by the secops-scanner rule, not the schema).",
+      "type": "boolean",
+      "const": false
+    },
+    "rationale": {
+      "description": "Free-form justification for `privileged: true` (when v1.1 enables it) or for unusual mount / network shapes. Surfaced in catalog review.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2000
+    },
+    "communication": {
+      "description": "How supervisord + daemon talk to the binary. At least one entry required.",
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 8,
+      "items": {
+        "oneOf": [
+          {
+            "$ref": "#/$defs/communicationHttpLoopback"
+          },
+          {
+            "$ref": "#/$defs/communicationStdioLog"
+          },
+          {
+            "$ref": "#/$defs/communicationStdioMcp"
+          }
+        ]
+      }
+    }
+  },
+  "$defs": {
+    "pathExpression": {
+      "description": "Either a StallariPaths.Class token or an absolute filesystem path. Tokens have the form `<class>(<args>)` where <class> is one of state/cache/runtime/config/log and <args> follows Swift enum syntax.",
+      "type": "string",
+      "minLength": 1,
+      "oneOf": [
+        {
+          "description": "StallariPaths.Class token — resolved by supervisord at spawn time. Allows nested parens (e.g. `state(.managed(\"gatus\"))`) and optional sub-path suffix.",
+          "type": "string",
+          "pattern": "^(state|cache|runtime|config|log)\\(.+\\)(/.+)?$"
+        },
+        {
+          "description": "Absolute POSIX path. Use sparingly; prefer StallariPaths tokens.",
+          "type": "string",
+          "pattern": "^/[^\\0]*$"
+        }
+      ]
+    },
+    "communicationHttpLoopback": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "port"
+      ],
+      "properties": {
+        "kind": {
+          "const": "http_loopback"
+        },
+        "port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "auth": {
+          "type": "string",
+          "enum": [
+            "bearer",
+            "none"
+          ],
+          "default": "bearer"
+        },
+        "path_prefix": {
+          "description": "Optional URL path prefix supervisord proxies to (e.g. '/api'). Defaults to '/'.",
+          "type": "string",
+          "pattern": "^/[a-zA-Z0-9._/-]*$"
+        }
+      }
+    },
+    "communicationStdioLog": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind"
+      ],
+      "properties": {
+        "kind": {
+          "const": "stdio_log"
+        },
+        "ring_buffer_lines": {
+          "description": "Lines retained in supervisord's per-binary ring buffer (default 4096).",
+          "type": "integer",
+          "minimum": 64,
+          "maximum": 65536
+        }
+      }
+    },
+    "communicationStdioMcp": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind"
+      ],
+      "properties": {
+        "kind": {
+          "const": "stdio_mcp"
+        },
+        "transport": {
+          "description": "Wire format. Reserved for future use; v1.0 accepts only 'stdio' to match DD-242's stdio-only blade-MCP transport invariant.",
+          "type": "string",
+          "const": "stdio"
+        }
+      }
+    }
+  }
+}

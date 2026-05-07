@@ -1,9 +1,15 @@
-# Manifest template for a managed binary.
+# BUILD manifest template for a managed binary (consumed by GitHub Actions).
 #
 # Copy to manifests/<binary>.yaml and fill in. The CI workflow keys off the
 # filename for the binary id (e.g. manifests/gatus.yaml → binary id "gatus").
 # Push tag "<binary>-v<version>" to trigger a build; the tag's version must
 # match this file's `version:` field exactly.
+#
+# DD-252 Phase C: every binary needs TWO manifests:
+#   - manifests/<binary>.yaml (this file) — build spec
+#   - capabilities/<binary>.yaml — runtime envelope, consumed by
+#     stallari-supervisord at spawn time. Template at capabilities/_template.yaml.
+#     PR CI validates the capability manifest against schema/capability-manifest.schema.json.
 
 binary: example                          # Stable id; matches filename and tag prefix
 version: "0.0.0"                         # Build-artifact version (matches the tag's -v suffix).

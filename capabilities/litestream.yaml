@@ -1,0 +1,42 @@
+# Litestream — SQLite WAL replication to S3-compatible object storage.
+# Realistic capability manifest exercising read_only_mounts across multiple
+# StallariPaths.Class tokens + allow_with_allowlist egress. Listed under
+# fixtures/valid/ (not examples/) because Litestream's runtime characteristics
+# are still being designed (DD-232 Phase C).
+spec_version: "1.0"
+binary: litestream
+purpose: |
+  Single-writer SQLite WAL replication (DD-232). Reads daemon SQLite files
+  read-only and replicates page deltas to a Cloudflare R2 bucket configured
+  by the user. Multi-writer successor is a future DD (DD-252 Phase C Q6).
+
+lifecycle:
+  keep_alive: true
+  restart_on_exit: always
+  graceful_shutdown_signal: SIGTERM
+  graceful_shutdown_timeout_seconds: 60
+
+filesystem:
+  working_dir: 'state(.managed("litestream"))'
+  read_only_mounts:
+    - 'state(.traces)'
+    - 'state(.commitments)'
+    - 'state(.tracks)'
+    - 'state(.lensRoot)'
+  write_mounts: []
+
+network:
+  egress: allow_with_allowlist
+  egress_allowlist:
+    - "*.r2.cloudflarestorage.com:443"
+  ingress: []
+
+resources:
+  memory_max_mb: 512
+  cpu_quota_percent: 50
+
+privileged: false
+
+communication:
+  - kind: stdio_log
+    ring_buffer_lines: 8192

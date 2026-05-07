@@ -1,0 +1,43 @@
+# Gatus — uptime monitoring + dashboard. Family-org status board (DD-191 P1a).
+# Pairs with stallari-managed-binaries/manifests/gatus.yaml (build manifest).
+spec_version: "1.0"
+binary: gatus
+purpose: |
+  Uptime monitoring + dashboard. Surfaced in the Stallari mesh as the family-org
+  status board. Stallari supervisord writes the live Gatus YAML config to
+  state(.managed("gatus"))/config.yaml; the binary reads GATUS_CONFIG_FILE
+  and listens on 127.0.0.1:8081/uptime.
+
+lifecycle:
+  keep_alive: true
+  restart_on_exit: always
+  graceful_shutdown_signal: SIGTERM
+  graceful_shutdown_timeout_seconds: 30
+
+filesystem:
+  working_dir: 'state(.managed("gatus"))'
+  config_path: 'state(.managed("gatus"))/config.yaml'
+  read_only_mounts:
+    - "/etc/ssl/certs"
+  write_mounts: []
+
+network:
+  egress: deny
+  egress_allowlist: []
+  ingress:
+    - port: 8081
+      bind: "127.0.0.1"
+
+resources:
+  memory_max_mb: 256
+  cpu_quota_percent: 50
+
+privileged: false
+
+communication:
+  - kind: http_loopback
+    port: 8081
+    auth: bearer
+    path_prefix: "/api"
+  - kind: stdio_log
+    ring_buffer_lines: 4096

@@ -1,0 +1,44 @@
+# ntfy — pub/sub notification server. Per-fleet topic isolation (DD-215).
+# Pairs with stallari-managed-binaries/manifests/ntfy.yaml (build manifest).
+spec_version: "1.0"
+binary: ntfy
+purpose: |
+  Self-hosted pub/sub notifications. Stallari fleet members subscribe to
+  per-install topics; the daemon publishes user-visible alerts (HITL prompts,
+  failed dispatch, mesh peer events). Persistent state at
+  state(.managed("ntfy"))/cache.db.
+
+lifecycle:
+  keep_alive: true
+  restart_on_exit: always
+  graceful_shutdown_signal: SIGTERM
+  graceful_shutdown_timeout_seconds: 15
+
+filesystem:
+  working_dir: 'state(.managed("ntfy"))'
+  config_path: 'state(.managed("ntfy"))/server.yml'
+  read_only_mounts:
+    - "/etc/ssl/certs"
+  write_mounts: []
+
+network:
+  # ntfy publishes to APNS via the stallari-apns-proxy worker.
+  # Direct egress is deny; the daemon proxies via its own network.
+  egress: deny
+  egress_allowlist: []
+  ingress:
+    - port: 8082
+      bind: "127.0.0.1"
+
+resources:
+  memory_max_mb: 128
+  cpu_quota_percent: 25
+
+privileged: false
+
+communication:
+  - kind: http_loopback
+    port: 8082
+    auth: bearer
+  - kind: stdio_log
+    ring_buffer_lines: 2048

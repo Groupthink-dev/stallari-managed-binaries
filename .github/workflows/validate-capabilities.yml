@@ -1,0 +1,47 @@
+name: Validate capability manifests
+
+on:
+  pull_request:
+    paths:
+      - "capabilities/**"
+      - "schema/**"
+      - ".github/workflows/validate-capabilities.yml"
+  push:
+    branches: [main]
+    paths:
+      - "capabilities/**"
+      - "schema/**"
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install AJV CLI
+        run: npm install --no-save ajv-cli@^5 ajv-formats@^3 js-yaml@^4
+
+      - name: Validate every capabilities/*.yaml against vendored schema
+        run: |
+          set -e
+          shopt -s nullglob
+          fail=0
+          for f in capabilities/*.yaml; do
+            base=$(basename "$f")
+            if [ "$base" = "_template.yaml" ]; then
+              echo "skip $f (template)"
+              continue
+            fi
+            echo "validate $f"
+            npx ajv-cli validate \
+              -s schema/capability-manifest.schema.json \
+              -d "$f" \
+              --spec=draft2020 \
+              --strict=false \
+              || fail=1
+          done
+          exit $fail

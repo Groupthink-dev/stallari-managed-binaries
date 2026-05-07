@@ -88,10 +88,20 @@ Within Go's well-known reproducibility caveats (with `-trimpath` and `CGO_ENABLE
 
 ## Adding a binary
 
+Each binary has **two manifests** (DD-252 Phase C):
+
+| File | Schema | Consumer | Purpose |
+|---|---|---|---|
+| `manifests/<binary>.yaml` | (none, hand-curated) | GitHub Actions build pipeline | Go module, version, CGO flags, architectures |
+| `capabilities/<binary>.yaml` | [`schema/capability-manifest.schema.json`](schema/capability-manifest.schema.json) | `stallari-supervisord` | Runtime envelope — filesystem, network, resources, lifecycle, communication. Synthesised into a `sandbox-exec` profile at spawn time. |
+
 1. Copy [`manifests/_template.yaml`](manifests/_template.yaml) → `manifests/<binary>.yaml`. Fill in `binary`, `version`, `upstream`, `purpose`, `build`, `architectures`.
-2. Open a PR. After merge, push tag `<binary>-v<upstream-version>` (e.g. `gatus-v5.13.0`). The tag's version must match the manifest's `version:` field exactly — the workflow refuses to build otherwise, by design.
-3. CI runs on hosted `macos-14`, builds with `go install -trimpath -buildvcs=false`, computes SHA256, attaches binary + `.sha256` sidecar to a public GitHub release named after the tag.
-4. Pin the published SHA256 in the corresponding `<Binary>BinaryDescriptor.swift` in [`stallari-harness`](https://github.com/Groupthink-dev/stallari-harness), version-bump, ship.
+2. Copy [`capabilities/_template.yaml`](capabilities/_template.yaml) → `capabilities/<binary>.yaml`. Declare the runtime envelope: lifecycle, mounts, network posture, resource ceilings, communication contract.
+3. Open a PR. CI runs `validate-capabilities.yml` (AJV against the vendored schema). After merge, push tag `<binary>-v<upstream-version>` (e.g. `gatus-v5.13.0`). The tag's version must match the build manifest's `version:` field exactly — the workflow refuses to build otherwise, by design.
+4. CI runs on hosted `macos-14`, builds with `go install -trimpath -buildvcs=false`, computes SHA256, attaches binary + `.sha256` sidecar to a public GitHub release named after the tag.
+5. Pin the published SHA256 in the corresponding `<Binary>BinaryDescriptor.swift` in [`stallari-harness`](https://github.com/Groupthink-dev/stallari-harness), version-bump, ship.
+
+The capability manifest schema is sourced from [`stallari-managed-binary-spec`](https://github.com/Groupthink-dev/stallari-managed-binary-spec); we vendor `dist/json/manifest.schema.json` here at `schema/capability-manifest.schema.json`. Re-vendor when the spec ships a new minor.
 
 ### Tag → release shape
 
